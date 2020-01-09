@@ -1,0 +1,183 @@
+Option Explicit
+
+Public CurSession As Object
+Public CurConnection As Object
+
+Sub connection_to_SAP()
+    Dim SapGUI As Object
+    Set SapGUI = GetObject("SAPGUI").GetScriptingEngine
+    If SapGUI.Children.Count = 0 Then  'åñëè íåò ïîäëþ÷åíèÿ ñîçäàåì
+        Set CurConnection = SapGUI.openconnection("EAP-SSO (ïðîäóêòèâ)")
+    Else
+        Set CurConnection = SapGUI.Children(0)
+    End If
+    Set CurSession = CurConnection.Children(0)
+    If LCase$(Environ$("username")) = "olesya.bezyaeva" Then
+        CurSession.findById("wnd[0]/usr/tblSAPMSYSTTC_IUSRACL/btnIUSRACL-BNAME[1,0]").SetFocus
+        CurSession.findById("wnd[0]/usr/tblSAPMSYSTTC_IUSRACL/btnIUSRACL-BNAME[1,0]").press
+    End If
+End Sub
+Sub createTransaction(ByVal TransactionName As String)
+    Dim NameAllSessions As String
+    Dim SesionAll As Object
+    Dim FlagCreateSession As Boolean
+    For Each SesionAll In CurConnection.sessions
+        NameAllSessions = NameAllSessions & SesionAll.Name
+    Next
+    CurSession.findById("wnd[0]/tbar[0]/okcd").Text = "/o" & TransactionName
+    CurSession.findById("wnd[0]").sendVKey 0
+    Do While FlagCreateSession = False
+        For Each SesionAll In CurConnection.sessions
+            If InStr(NameAllSessions, SesionAll.Name) = 0 Then
+                Set CurSession = SesionAll
+                Set SesionAll = Nothing
+                FlagCreateSession = True
+                Exit For
+            End If
+        Next
+    Loop
+End Sub
+
+Function sapName(ByVal SAP_ElementName As String, Optional ByRef SAP_rootElement As Object = Nothing, Optional ByVal SAP_ElementType As String = vbNullString) As Object
+    Dim SAP_Element As Object
+    Dim i As Long
+    Dim j As Long
+    '------------------------------------------------
+    If SAP_ElementName = vbNullString Then
+        Set sapName = Nothing
+        Exit Function
+    End If
+    If SAP_rootElement Is Nothing Then
+        Set SAP_rootElement = CurSession.ActiveWindow
+    Else
+        On Error Resume Next
+        Set SAP_rootElement = SAP_rootElement.ActiveWindow
+        On Error GoTo 0
+    End If
+    If SAP_ElementType = vbNullString Then 'åñëè òèï íå óêàçàí
+        Dim Dict As Object
+        Dim array_SAP_Type() As Variant
+        Set Dict = CreateObject("scripting.dictionary")
+        array_SAP_Type = Array("txt-GuiTextField", _
+        "ctxt-GuiCTextField", _
+        "btn-GuiButton", _
+        "rad-GuiRadioButton", _
+        "box-GuiBox", _
+        "chk-GuiCheckBox", _
+        "menu-GuiMenu", _
+        "sbar-GuiStatusbar", _
+        "tbar-GuiToolbar", _
+        "tabp-GuiTab", _
+        "cmb-GuiComboBox", _
+        "cntl-GuiCustomControl", _
+        "lbl-GuiLabel", _
+        "shell-GuiShell")
+        For i = 0 To UBound(array_SAP_Type)
+            Dict.Item(Split(array_SAP_Type(i), "-")(0)) = Split(array_SAP_Type(i), "-")(1)
+        Next
+        If Dict.exists(Left$(SAP_ElementName, 4)) Then
+            If InStr(SAP_ElementName, "[") > 0 Then
+                Set sapName = SAP_rootElement.FindAllByName(Split(Mid$(SAP_ElementName, 5, Len(SAP_ElementName)), "[")(0), Dict.Item(Left$(SAP_ElementName, 4)))
+                Set sapName = sapName.elementat(Split(Split(Split(Mid$(SAP_ElementName, 5, Len(SAP_ElementName)), "[")(1), ",")(1), "]")(0))
+                Exit Function
+            Else
+                Set sapName = SAP_rootElement.FindByName(Mid$(SAP_ElementName, 5, Len(SAP_ElementName)), Dict.Item(Left$(SAP_ElementName, 4)))
+                Exit Function
+            End If
+        ElseIf Dict.exists(Left$(SAP_ElementName, 3)) Then
+            If InStr(SAP_ElementName, "[") > 0 Then
+                    If InStr(SAP_ElementName, "btn") > 0 Then
+                        Set sapName = SAP_rootElement.FindByName(SAP_ElementName, Dict.Item(Left$(SAP_ElementName, 3)))
+                        Exit Function
+                    Else
+                        Set sapName = SAP_rootElement.FindAllByName(Split(Mid$(SAP_ElementName, 4, Len(SAP_ElementName)), "[")(0), Dict.Item(Left$(SAP_ElementName, 3)))
+                        Set sapName = sapName.elementat(Split(Split(Split(Mid$(SAP_ElementName, 4, Len(SAP_ElementName)), "[")(1), ",")(1), "]")(0))
+                        Exit Function
+                    End If
+                Else
+                    Set sapName = SAP_rootElement.FindByName(Mid$(SAP_ElementName, 4, Len(SAP_ElementName)), Dict.Item(Left$(SAP_ElementName, 3)))
+                End If
+            Exit Function
+        ElseIf Dict.exists(Left$(SAP_ElementName, 5)) Then
+            On Error Resume Next
+            Set SAP_Element = SAP_rootElement.FindByName("shell", "GuiShell")
+            If Err.Number <> 0 Then
+                check_shell SAP_Element, SAP_rootElement
+                Set sapName = SAP_Element
+                Exit Function
+            End If
+            On Error GoTo 0
+            If SAP_Element.SubType <> "GridView" Then
+                For i = 0 To SAP_Element.Children.Count - 1
+                    For j = 0 To SAP_Element.Children.elementat(i).Children.Count - 1
+                        If SAP_Element.Children.elementat(i).Children.elementat(j).SubType = "GridView" Then
+                        Set sapName = SAP_Element.Children.elementat(i).Children.elementat(j)
+                        Exit Function
+                        End If
+                    Next
+                Next
+            Else
+                Set sapName = SAP_Element
+                Exit Function
+            End If
+        Else
+            Set sapName = Nothing
+            Exit Function
+        End If
+    Else
+        On Error Resume Next
+        Set sapName = SAP_rootElement.FindByName(Mid$(SAP_ElementName, 4, Len(SAP_ElementName)), SAP_ElementType) 'èìÿ óêàçàíî ñ ïðåôèêñîì
+        On Error GoTo 0
+        If sapName Is Nothing Then
+            On Error Resume Next
+            Set sapName = SAP_rootElement.FindByName(Mid$(SAP_ElementName, 3, Len(SAP_ElementName)), SAP_ElementType) 'èìÿ óêàçàíî ñ ïðåôèêñîì
+            On Error GoTo 0
+            If sapName Is Nothing Then
+                Set sapName = SAP_rootElement.FindByName(SAP_ElementName, SAP_ElementType) 'èìÿ óêàçàíî áåç ïðåôèêñà
+            End If
+        End If
+    End If
+End Function
+Sub check_shell(ByRef SAP_Element As Object, ByVal SAP_rootElement As Object)
+    Dim i As Long
+    Dim j As Long
+    Dim r As Long
+    For i = 0 To SAP_rootElement.Children.Count - 1
+        Set SAP_Element = SAP_rootElement.Children.elementat(i)
+        If SAP_Element.ContainerType And SAP_Element.Type <> "GuiShell" Then check_shell SAP_Element, SAP_Element
+        If SAP_Element.SubType <> "GridView" Then
+            For j = 0 To SAP_Element.Children.Count - 1
+                For r = 0 To SAP_Element.Children.elementat(j).Children.Count - 1
+                    If SAP_Element.Children.elementat(j).Children.elementat(r).SubType = "GridView" Then
+                    Set SAP_Element = SAP_Element.Children.elementat(j).Children.elementat(r)
+                    Exit Sub
+                    End If
+                Next
+            Next
+        Else
+            Exit Sub
+        End If
+    Next
+End Sub
+
+Sub clear_all_pole()
+    Dim i As Long
+    For i = 0 To CurSession.findById("wnd[0]/usr").Children.Count - 1
+        If InStr("GuiTextField/GuiCTextField", CurSession.findById("wnd[0]/usr").Children.elementat(i).Type) > 0 Then
+            CurSession.findById("wnd[0]/usr").Children.elementat(i).SetFocus
+            CurSession.findById("wnd[0]/mbar/menu[1]/menu[6]").Select
+        End If
+    Next
+End Sub
+
+
+
+
+
+
+
+
+
+
+
+
