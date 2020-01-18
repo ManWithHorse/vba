@@ -162,6 +162,7 @@ End Sub
 
 Sub clear_all_pole()
     Dim i As Long
+    on error resume next
     For i = 0 To CurSession.findById("wnd[0]/usr").Children.Count - 1
         If InStr("GuiTextField/GuiCTextField", CurSession.findById("wnd[0]/usr").Children.elementat(i).Type) > 0 Then
             CurSession.findById("wnd[0]/usr").Children.elementat(i).SetFocus
